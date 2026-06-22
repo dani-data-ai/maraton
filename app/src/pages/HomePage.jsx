@@ -1,0 +1,257 @@
+import { useState, useEffect, useCallback } from "react";
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday, isFuture, parseISO } from "date-fns";
+import { ro } from "date-fns/locale";
+import { PLAN_META, getReadingForDay, getDayNumberForDate } from "../data/plans";
+import DayModal from "../components/DayModal";
+
+const TODAY = format(new Date(), "yyyy-MM-dd");
+const THIS_MONTH = format(new Date(), "yyyy-MM");
+
+export default function HomePage({ user }) {
+  const [plan, setPlan] = useState(null);
+  const [entries, setEntries] = useState([]);
+  const [vigilMonths, setVigilMonths] = useState([]);
+  const [extraSteps, setExtraSteps] = useState([]);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [viewMonth, setViewMonth] = useState(new Date());
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    try {
+      const [r1, r2, r3] = await Promise.all([
+        fetch("/api/reading/my", { credentials: "include" }).then((r) => r.json()),
+        fetch("/api/vigil", { credentials: "include" }).then((r) => r.json()),
+        fetch("/api/extrasteps/my", { credentials: "include" }).then((r) => r.json()),
+      ]);
+      setPlan(r1.plan || null);
+      setEntries(r1.entries || []);
+      setVigilMonths(r2 || []);
+      setExtraSteps(r3 || []);
+    } catch {}
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const entriesByDate = Object.fromEntries(entries.map((e) => [e.date, e]));
+
+  const stepsForDate = (dateStr) => {
+    return extraSteps.filter((s) => {
+      if (!s.isRecurring) return s.date === dateStr;
+      const d = new Date(dateStr);
+      if (s.startDate && dateStr < s.startDate) return false;
+      if (s.endDate && dateStr > s.endDate) return false;
+      const dayName = ["SUN","MON","TUE","WED","THU","FRI","SAT"][d.getDay()];
+      if (s.recurrence === "DAILY") return true;
+      if (s.recurrence === "WEEKLY") {
+        if (!s.startDate) return false;
+        const startDay = new Date(s.startDate).getDay();
+        return d.getDay() === startDay;
+      }
+      if (s.recurrence === "MONTHLY") {
+        if (!s.startDate) return false;
+        return new Date(s.startDate).getDate() === d.getDate();
+      }
+      return s.recurrence?.split(",").includes(dayName);
+    });
+  };
+
+  const handleVigilToggle = async () => {
+    const res = await fetch("/api/vigil/toggle", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ month: THIS_MONTH }),
+    });
+    if (res.ok) {
+      const { marked } = await res.json();
+      setVigilMonths((prev) => marked ? [...prev, THIS_MONTH] : prev.filter((m) => m !== THIS_MONTH));
+    }
+  };
+
+  const daysRead = entries.length;
+  const totalDays = PLAN_META[plan?.planType]?.days || 0;
+  const pct = totalDays ? Math.round((daysRead / totalDays) * 100) : 0;
+
+  const monthStart = startOfMonth(viewMonth);
+  const monthEnd = endOfMonth(viewMonth);
+  const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
+  const startPad = getDay(monthStart) === 0 ? 6 : getDay(monthStart) - 1;
+
+  const vigilDone = vigilMonths.includes(THIS_MONTH);
+  const planMeta = plan ? PLAN_META[plan.planType] : null;
+
+  if (loading) return (
+    <div className="fade-in" style={{ padding: "60px 0", textAlign: "center" }}>
+      <div className="pulse" style={{ color: "var(--gold)", fontFamily: "Lora, serif", fontSize: "1.4rem" }}>Maraton</div>
+    </div>
+  );
+
+  return (
+    <div className="fade-in">
+      {/* Header */}
+      <div className="app-header">
+        <div className="app-header-eyebrow">O dată în viață</div>
+        <div className="app-header-title">Maraton Biblie</div>
+      </div>
+
+      <div className="app-content">
+        {/* Stats */}
+        {plan && (
+          <div className="stat-row" style={{ marginTop: 16 }}>
+            <div className="stat-box">
+              <div className="stat-big">{daysRead}</div>
+              <div className="stat-small">Zile citite</div>
+            </div>
+            <div className="stat-box">
+              <div className="stat-big">{pct}%</div>
+              <div className="stat-small">Progres</div>
+            </div>
+            <div className="stat-box">
+              <div className="stat-big">{totalDays - daysRead}</div>
+              <div className="stat-small">Rămase</div>
+            </div>
+          </div>
+        )}
+
+        {/* Plan info */}
+        {plan ? (
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div>
+                <div style={{ fontSize: "0.72rem", color: "var(--text3)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>Planul tău</div>
+                <div style={{ fontSize: "0.95rem", color: "var(--text)", fontWeight: 500 }}>{planMeta?.label}</div>
+                <div style={{ fontSize: "0.78rem", color: "var(--text3)", marginTop: 2 }}>Start: {plan.startDate}</div>
+              </div>
+              <div style={{ width: 56, height: 56, position: "relative" }}>
+                <svg viewBox="0 0 56 56" style={{ transform: "rotate(-90deg)" }}>
+                  <circle cx="28" cy="28" r="22" fill="none" stroke="var(--border)" strokeWidth="4" />
+                  <circle cx="28" cy="28" r="22" fill="none" stroke="var(--gold)" strokeWidth="4"
+                    strokeDasharray={`${2 * Math.PI * 22}`}
+                    strokeDashoffset={`${2 * Math.PI * 22 * (1 - pct / 100)}`}
+                    strokeLinecap="round" />
+                </svg>
+                <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.72rem", fontWeight: 700, color: "var(--gold)" }}>{pct}%</div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="card" style={{ marginBottom: 16, textAlign: "center", padding: "28px 20px" }}>
+            <div style={{ fontSize: "1.5rem", marginBottom: 8 }}>📖</div>
+            <div style={{ fontSize: "0.95rem", color: "var(--text2)", marginBottom: 4 }}>Niciun plan asignat</div>
+            <div style={{ fontSize: "0.8rem", color: "var(--text3)" }}>Mentorul tău va alege un plan de citire pentru tine</div>
+          </div>
+        )}
+
+        {/* Calendar */}
+        <div className="card" style={{ marginBottom: 16 }}>
+          {/* Month nav */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <button className="btn-icon" onClick={() => setViewMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1))}>
+              <ChevronLeft />
+            </button>
+            <div style={{ fontSize: "0.9rem", fontWeight: 600, textTransform: "capitalize" }}>
+              {format(viewMonth, "MMMM yyyy", { locale: ro })}
+            </div>
+            <button className="btn-icon" onClick={() => setViewMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1))}>
+              <ChevronRight />
+            </button>
+          </div>
+
+          {/* Day headers */}
+          <div className="cal-grid" style={{ marginBottom: 0 }}>
+            {["Lu","Ma","Mi","Jo","Vi","Sâ","Du"].map((d) => (
+              <div key={d} className="cal-day-header">{d}</div>
+            ))}
+          </div>
+
+          {/* Cells */}
+          <div className="cal-grid">
+            {Array.from({ length: startPad }).map((_, i) => <div key={`p${i}`} />)}
+            {days.map((day) => {
+              const dateStr = format(day, "yyyy-MM-dd");
+              const isRead = !!entriesByDate[dateStr];
+              const hasSteps = stepsForDate(dateStr).length > 0;
+              const future = isFuture(day) && !isToday(day);
+              const dayNum = plan ? getDayNumberForDate(plan.planType, plan.startDate, dateStr) : null;
+              const outOfPlan = plan && !dayNum;
+              return (
+                <div
+                  key={dateStr}
+                  className={[
+                    "cal-cell",
+                    isToday(day) ? "today" : "",
+                    isRead ? "read" : "",
+                    hasSteps ? "has-step" : "",
+                    future ? "future" : "",
+                    (!future && outOfPlan) ? "out-of-plan" : "",
+                  ].filter(Boolean).join(" ")}
+                  onClick={() => !future && !outOfPlan && setSelectedDate(dateStr)}
+                  title={dayNum ? `Ziua ${dayNum}` : ""}
+                >
+                  {day.getDate()}
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ marginTop: 12, display: "flex", gap: 14, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.7rem", color: "var(--text3)" }}>
+              <div style={{ width: 10, height: 10, borderRadius: 3, background: "var(--gold-dim)", border: "1px solid var(--gold)" }} />
+              Citit
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.7rem", color: "var(--text3)" }}>
+              <div style={{ width: 10, height: 10, borderRadius: 3, background: "var(--bg3)", position: "relative" }}>
+                <div style={{ position: "absolute", bottom: 1, right: 1, width: 4, height: 4, borderRadius: "50%", background: "var(--blue)" }} />
+              </div>
+              Activitate
+            </div>
+          </div>
+        </div>
+
+        {/* Vigilia lunara */}
+        <div className="card">
+          <div className="section-title">Vigilia lunară</div>
+          <div style={{ fontSize: "0.85rem", color: "var(--text2)", marginBottom: 14 }}>
+            {format(new Date(), "MMMM yyyy", { locale: ro })}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              {vigilDone ? (
+                <span className="badge badge-green">✓ Vigilia făcută</span>
+              ) : (
+                <span style={{ fontSize: "0.85rem", color: "var(--text3)" }}>Nu ai marcat vigilia acestei luni</span>
+              )}
+            </div>
+            <button
+              className={vigilDone ? "btn-ghost" : "btn-primary"}
+              style={{ fontSize: "0.8rem", padding: "8px 18px" }}
+              onClick={handleVigilToggle}
+            >
+              {vigilDone ? "Anulează" : "Marchează"}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {selectedDate && (
+        <DayModal
+          dateStr={selectedDate}
+          plan={plan}
+          entry={entriesByDate[selectedDate] || null}
+          steps={stepsForDate(selectedDate)}
+          stepCompletions={extraSteps.flatMap((s) => s.completions || [])}
+          onClose={() => setSelectedDate(null)}
+          onSave={load}
+        />
+      )}
+    </div>
+  );
+}
+
+function ChevronLeft() {
+  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15 18l-6-6 6-6" /></svg>;
+}
+function ChevronRight() {
+  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 18l6-6-6-6" /></svg>;
+}

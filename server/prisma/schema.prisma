@@ -1,0 +1,106 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         String   @default("SCUTIER") // "SCUTIER" | "MENTOR"
+  mentorId     String?
+  mentor       User?    @relation("Mentorat", fields: [mentorId], references: [id])
+  scutieri     User[]   @relation("Mentorat")
+  createdAt    DateTime @default(now())
+
+  invitesCreated  InviteCode[]
+  readingPlan     ReadingPlan?
+  readingEntries  ReadingEntry[]
+  vigilMonths     VigilMonth[]
+  extraSteps      ExtraStep[]          @relation("MentorExtraSteps")
+  extraStepsFor   ExtraStep[]          @relation("ScutierExtraSteps")
+  stepCompletions ExtraStepCompletion[]
+}
+
+model InviteCode {
+  id        String    @id @default(cuid())
+  code      String    @unique
+  createdBy String
+  creator   User      @relation(fields: [createdBy], references: [id])
+  usedBy    String?
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+// Planul de citire asignat de mentor unui scutier
+model ReadingPlan {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  planType  String   // "GOSPELS_42" | "NT_42" | "NT_60" | "BIBLE_180"
+  startDate String   // "2026-06-01"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Ziua bifata de scutier + gandul lui
+model ReadingEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  date      String   // "2026-06-15"
+  dayNumber Int      // ziua din plan (1-based)
+  thought   String?  // gandul scris de scutier
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, date])
+}
+
+// Vigilia lunara
+model VigilMonth {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+  month  String // "2026-06"
+
+  @@unique([userId, month])
+}
+
+// Extra steps create de mentor pentru un scutier
+model ExtraStep {
+  id          String   @id @default(cuid())
+  mentorId    String
+  scutierId   String
+  title       String
+  description String?
+  isRecurring Boolean  @default(false)
+  // Daca e o singura data:
+  date        String?  // "2026-06-20"
+  // Daca e recurent:
+  recurrence  String?  // "DAILY" | "WEEKLY" | "MONTHLY" | zile: "MON,WED,FRI"
+  startDate   String?  // "2026-06-01"
+  endDate     String?  // "2026-12-31" (optional)
+  createdAt   DateTime @default(now())
+  mentor      User     @relation("MentorExtraSteps", fields: [mentorId], references: [id])
+  scutier     User     @relation("ScutierExtraSteps", fields: [scutierId], references: [id])
+  completions ExtraStepCompletion[]
+}
+
+// Scutierul bifeaza un extra step pe o anumita data
+model ExtraStepCompletion {
+  id          String    @id @default(cuid())
+  stepId      String
+  userId      String
+  date        String    // "2026-06-20"
+  completedAt DateTime  @default(now())
+  step        ExtraStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@unique([stepId, userId, date])
+}

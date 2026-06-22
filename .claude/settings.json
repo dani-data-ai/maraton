@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "allow": [
+      "Bash(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)"
+    ],
+    "additionalDirectories": ["/Users/dani/Downloads/maraton"]
+  }
+}

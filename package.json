@@ -1,0 +1,10 @@
+{
+  "name": "maraton",
+  "version": "1.0.0",
+  "private": true,
+  "engines": { "node": ">=18.0.0" },
+  "scripts": {
+    "build": "cd server && npm install && npx prisma generate && cd ../app && npm install --include=dev && npm run build && cp -r dist ../server/public",
+    "start": "cd server && npx prisma db push --accept-data-loss && node seed.js && node index.js"
+  }
+}
