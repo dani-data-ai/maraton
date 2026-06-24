@@ -1,26 +1,27 @@
-import { useState, useEffect, useCallback } from "react";
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday, isFuture, parseISO } from "date-fns";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { format } from "date-fns";
 import { ro } from "date-fns/locale";
-import { PLAN_META, getReadingForDay, getDayNumberForDate } from "../data/plans";
+import { PLAN_META, getDayNumberForDate } from "../data/plans";
 import DayModal from "../components/DayModal";
+import RingCalendar from "../components/RingCalendar";
 
 const TODAY = format(new Date(), "yyyy-MM-dd");
 const THIS_MONTH = format(new Date(), "yyyy-MM");
 
 export default function HomePage({ user }) {
-  const [plan, setPlan] = useState(null);
-  const [entries, setEntries] = useState([]);
+  const [plan, setPlan]               = useState(null);
+  const [entries, setEntries]         = useState([]);
   const [vigilMonths, setVigilMonths] = useState([]);
-  const [extraSteps, setExtraSteps] = useState([]);
+  const [extraSteps, setExtraSteps]   = useState([]);
   const [selectedDate, setSelectedDate] = useState(null);
-  const [viewMonth, setViewMonth] = useState(new Date());
-  const [loading, setLoading] = useState(true);
+  const [viewMonth, setViewMonth]     = useState(new Date());
+  const [loading, setLoading]         = useState(true);
 
   const load = useCallback(async () => {
     try {
       const [r1, r2, r3] = await Promise.all([
         fetch("/api/reading/my", { credentials: "include" }).then((r) => r.json()),
-        fetch("/api/vigil", { credentials: "include" }).then((r) => r.json()),
+        fetch("/api/vigil",      { credentials: "include" }).then((r) => r.json()),
         fetch("/api/extrasteps/my", { credentials: "include" }).then((r) => r.json()),
       ]);
       setPlan(r1.plan || null);
@@ -33,20 +34,24 @@ export default function HomePage({ user }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const entriesByDate = Object.fromEntries(entries.map((e) => [e.date, e]));
+  const entriesByDate = useMemo(
+    () => Object.fromEntries(entries.map((e) => [e.date, e])),
+    [entries]
+  );
 
-  const stepsForDate = (dateStr) => {
+  const readDates = useMemo(() => new Set(entries.map((e) => e.date)), [entries]);
+
+  const stepsForDate = useCallback((dateStr) => {
     return extraSteps.filter((s) => {
       if (!s.isRecurring) return s.date === dateStr;
       const d = new Date(dateStr);
       if (s.startDate && dateStr < s.startDate) return false;
-      if (s.endDate && dateStr > s.endDate) return false;
+      if (s.endDate   && dateStr > s.endDate)   return false;
       const dayName = ["SUN","MON","TUE","WED","THU","FRI","SAT"][d.getDay()];
       if (s.recurrence === "DAILY") return true;
       if (s.recurrence === "WEEKLY") {
         if (!s.startDate) return false;
-        const startDay = new Date(s.startDate).getDay();
-        return d.getDay() === startDay;
+        return new Date(s.startDate).getDay() === d.getDay();
       }
       if (s.recurrence === "MONTHLY") {
         if (!s.startDate) return false;
@@ -54,7 +59,21 @@ export default function HomePage({ user }) {
       }
       return s.recurrence?.split(",").includes(dayName);
     });
-  };
+  }, [extraSteps]);
+
+  // Build stepDates Set for the visible month
+  const stepDates = useMemo(() => {
+    const year = viewMonth.getFullYear();
+    const month = viewMonth.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const monthStr = `${year}-${String(month + 1).padStart(2, "0")}`;
+    const set = new Set();
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${monthStr}-${String(d).padStart(2, "0")}`;
+      if (stepsForDate(dateStr).length > 0) set.add(dateStr);
+    }
+    return set;
+  }, [extraSteps, viewMonth, stepsForDate]);
 
   const handleVigilToggle = async () => {
     const res = await fetch("/api/vigil/toggle", {
@@ -69,17 +88,19 @@ export default function HomePage({ user }) {
     }
   };
 
-  const daysRead = entries.length;
+  const daysRead  = entries.length;
   const totalDays = PLAN_META[plan?.planType]?.days || 0;
-  const pct = totalDays ? Math.round((daysRead / totalDays) * 100) : 0;
-
-  const monthStart = startOfMonth(viewMonth);
-  const monthEnd = endOfMonth(viewMonth);
-  const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
-  const startPad = getDay(monthStart) === 0 ? 6 : getDay(monthStart) - 1;
+  const pct       = totalDays ? Math.round((daysRead / totalDays) * 100) : 0;
 
   const vigilDone = vigilMonths.includes(THIS_MONTH);
-  const planMeta = plan ? PLAN_META[plan.planType] : null;
+  const planMeta  = plan ? PLAN_META[plan.planType] : null;
+
+  const handleDayClick = (dateStr) => {
+    if (!plan) return;
+    const dayNum = getDayNumberForDate(plan.planType, plan.startDate, dateStr);
+    if (!dayNum) return;
+    setSelectedDate(dateStr);
+  };
 
   if (loading) return (
     <div className="fade-in" style={{ padding: "60px 0", textAlign: "center" }}>
@@ -131,7 +152,8 @@ export default function HomePage({ user }) {
                     strokeDashoffset={`${2 * Math.PI * 22 * (1 - pct / 100)}`}
                     strokeLinecap="round" />
                 </svg>
-                <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.72rem", fontWeight: 700, color: "var(--gold)" }}>{pct}%</div>
+                <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center",
+                  justifyContent: "center", fontSize: "0.72rem", fontWeight: 700, color: "var(--gold)" }}>{pct}%</div>
               </div>
             </div>
           </div>
@@ -143,70 +165,16 @@ export default function HomePage({ user }) {
           </div>
         )}
 
-        {/* Calendar */}
-        <div className="card" style={{ marginBottom: 16 }}>
-          {/* Month nav */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-            <button className="btn-icon" onClick={() => setViewMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1))}>
-              <ChevronLeft />
-            </button>
-            <div style={{ fontSize: "0.9rem", fontWeight: 600, textTransform: "capitalize" }}>
-              {format(viewMonth, "MMMM yyyy", { locale: ro })}
-            </div>
-            <button className="btn-icon" onClick={() => setViewMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1))}>
-              <ChevronRight />
-            </button>
-          </div>
-
-          {/* Day headers */}
-          <div className="cal-grid" style={{ marginBottom: 0 }}>
-            {["Lu","Ma","Mi","Jo","Vi","Sâ","Du"].map((d) => (
-              <div key={d} className="cal-day-header">{d}</div>
-            ))}
-          </div>
-
-          {/* Cells */}
-          <div className="cal-grid">
-            {Array.from({ length: startPad }).map((_, i) => <div key={`p${i}`} />)}
-            {days.map((day) => {
-              const dateStr = format(day, "yyyy-MM-dd");
-              const isRead = !!entriesByDate[dateStr];
-              const hasSteps = stepsForDate(dateStr).length > 0;
-              const future = isFuture(day) && !isToday(day);
-              const dayNum = plan ? getDayNumberForDate(plan.planType, plan.startDate, dateStr) : null;
-              const outOfPlan = plan && !dayNum;
-              return (
-                <div
-                  key={dateStr}
-                  className={[
-                    "cal-cell",
-                    isToday(day) ? "today" : "",
-                    isRead ? "read" : "",
-                    hasSteps ? "has-step" : "",
-                    future ? "future" : "",
-                    (!future && outOfPlan) ? "out-of-plan" : "",
-                  ].filter(Boolean).join(" ")}
-                  onClick={() => !future && !outOfPlan && setSelectedDate(dateStr)}
-                  title={dayNum ? `Ziua ${dayNum}` : ""}
-                >
-                  {day.getDate()}
-                </div>
-              );
-            })}
-          </div>
-
-          <div style={{ marginTop: 12, display: "flex", gap: 14, flexWrap: "wrap" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.7rem", color: "var(--text3)" }}>
-              <div style={{ width: 10, height: 10, borderRadius: 3, background: "var(--gold-dim)", border: "1px solid var(--gold)" }} />
-              Citit
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.7rem", color: "var(--text3)" }}>
-              <div style={{ width: 10, height: 10, borderRadius: 3, background: "var(--bg3)", position: "relative" }}>
-                <div style={{ position: "absolute", bottom: 1, right: 1, width: 4, height: 4, borderRadius: "50%", background: "var(--blue)" }} />
-              </div>
-              Activitate
-            </div>
-          </div>
+        {/* Ring Calendar */}
+        <div className="card" style={{ marginBottom: 16, paddingTop: 20, paddingBottom: 20 }}>
+          <RingCalendar
+            today={TODAY}
+            readDates={readDates}
+            stepDates={stepDates}
+            onDayClick={handleDayClick}
+            viewMonth={viewMonth}
+            setViewMonth={setViewMonth}
+          />
         </div>
 
         {/* Vigilia lunara */}
@@ -247,11 +215,4 @@ export default function HomePage({ user }) {
       )}
     </div>
   );
-}
-
-function ChevronLeft() {
-  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15 18l-6-6 6-6" /></svg>;
-}
-function ChevronRight() {
-  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 18l6-6-6-6" /></svg>;
 }
