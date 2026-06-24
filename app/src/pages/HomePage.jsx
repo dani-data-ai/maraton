@@ -20,9 +20,9 @@ export default function HomePage({ user }) {
   const load = useCallback(async () => {
     try {
       const [r1, r2, r3] = await Promise.all([
-        fetch("/api/reading/my", { credentials: "include" }).then((r) => r.json()),
-        fetch("/api/vigil",      { credentials: "include" }).then((r) => r.json()),
-        fetch("/api/extrasteps/my", { credentials: "include" }).then((r) => r.json()),
+        fetch("/api/reading/my",      { credentials: "include" }).then((r) => r.json()),
+        fetch("/api/vigil",           { credentials: "include" }).then((r) => r.json()),
+        fetch("/api/extrasteps/my",   { credentials: "include" }).then((r) => r.json()),
       ]);
       setPlan(r1.plan || null);
       setEntries(r1.entries || []);
@@ -61,7 +61,6 @@ export default function HomePage({ user }) {
     });
   }, [extraSteps]);
 
-  // Build stepDates Set for the visible month
   const stepDates = useMemo(() => {
     const year = viewMonth.getFullYear();
     const month = viewMonth.getMonth();
@@ -91,7 +90,6 @@ export default function HomePage({ user }) {
   const daysRead  = entries.length;
   const totalDays = PLAN_META[plan?.planType]?.days || 0;
   const pct       = totalDays ? Math.round((daysRead / totalDays) * 100) : 0;
-
   const vigilDone = vigilMonths.includes(THIS_MONTH);
   const planMeta  = plan ? PLAN_META[plan.planType] : null;
 
@@ -117,12 +115,13 @@ export default function HomePage({ user }) {
       </div>
 
       <div className="app-content">
-        {/* Stats */}
+
+        {/* Compact stats */}
         {plan && (
-          <div className="stat-row" style={{ marginTop: 16 }}>
+          <div className="stat-row" style={{ marginTop: 14 }}>
             <div className="stat-box">
               <div className="stat-big">{daysRead}</div>
-              <div className="stat-small">Zile citite</div>
+              <div className="stat-small">Citite</div>
             </div>
             <div className="stat-box">
               <div className="stat-big">{pct}%</div>
@@ -135,38 +134,13 @@ export default function HomePage({ user }) {
           </div>
         )}
 
-        {/* Plan info */}
-        {plan ? (
-          <div className="card" style={{ marginBottom: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div>
-                <div style={{ fontSize: "0.72rem", color: "var(--text3)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>Planul tău</div>
-                <div style={{ fontSize: "0.95rem", color: "var(--text)", fontWeight: 500 }}>{planMeta?.label}</div>
-                <div style={{ fontSize: "0.78rem", color: "var(--text3)", marginTop: 2 }}>Start: {plan.startDate}</div>
-              </div>
-              <div style={{ width: 56, height: 56, position: "relative" }}>
-                <svg viewBox="0 0 56 56" style={{ transform: "rotate(-90deg)" }}>
-                  <circle cx="28" cy="28" r="22" fill="none" stroke="var(--border)" strokeWidth="4" />
-                  <circle cx="28" cy="28" r="22" fill="none" stroke="var(--gold)" strokeWidth="4"
-                    strokeDasharray={`${2 * Math.PI * 22}`}
-                    strokeDashoffset={`${2 * Math.PI * 22 * (1 - pct / 100)}`}
-                    strokeLinecap="round" />
-                </svg>
-                <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center",
-                  justifyContent: "center", fontSize: "0.72rem", fontWeight: 700, color: "var(--gold)" }}>{pct}%</div>
-              </div>
+        {/* Hero calendar */}
+        <div className="card-hero">
+          {!plan && (
+            <div style={{ textAlign: "center", paddingBottom: 12, borderBottom: "1px solid var(--border)", marginBottom: 16 }}>
+              <div style={{ fontSize: "0.8rem", color: "var(--text3)" }}>Niciun plan asignat — mentorul tău va alege unul</div>
             </div>
-          </div>
-        ) : (
-          <div className="card" style={{ marginBottom: 16, textAlign: "center", padding: "28px 20px" }}>
-            <div style={{ fontSize: "1.5rem", marginBottom: 8 }}>📖</div>
-            <div style={{ fontSize: "0.95rem", color: "var(--text2)", marginBottom: 4 }}>Niciun plan asignat</div>
-            <div style={{ fontSize: "0.8rem", color: "var(--text3)" }}>Mentorul tău va alege un plan de citire pentru tine</div>
-          </div>
-        )}
-
-        {/* Ring Calendar */}
-        <div className="card" style={{ marginBottom: 16, paddingTop: 20, paddingBottom: 20 }}>
+          )}
           <RingCalendar
             today={TODAY}
             readDates={readDates}
@@ -177,29 +151,48 @@ export default function HomePage({ user }) {
           />
         </div>
 
-        {/* Vigilia lunara */}
-        <div className="card">
-          <div className="section-title">Vigilia lunară</div>
-          <div style={{ fontSize: "0.85rem", color: "var(--text2)", marginBottom: 14 }}>
-            {format(new Date(), "MMMM yyyy", { locale: ro })}
-          </div>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div>
-              {vigilDone ? (
-                <span className="badge badge-green">✓ Vigilia făcută</span>
-              ) : (
-                <span style={{ fontSize: "0.85rem", color: "var(--text3)" }}>Nu ai marcat vigilia acestei luni</span>
-              )}
+        {/* Compact info row: plan + vigilia */}
+        <div className="info-row">
+          {/* Plan pill */}
+          <div className="info-pill" style={{ flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
+            <div className="info-pill-label">Plan</div>
+            <div className="info-pill-val">
+              {planMeta ? planMeta.label : <span style={{ color: "var(--text3)" }}>Neasignat</span>}
             </div>
-            <button
-              className={vigilDone ? "btn-ghost" : "btn-primary"}
-              style={{ fontSize: "0.8rem", padding: "8px 18px" }}
-              onClick={handleVigilToggle}
-            >
-              {vigilDone ? "Anulează" : "Marchează"}
-            </button>
+            {plan && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, width: "100%" }}>
+                <div style={{ flex: 1, height: 3, background: "var(--bg3)", borderRadius: 2, overflow: "hidden" }}>
+                  <div style={{ width: `${pct}%`, height: "100%", background: "var(--gold)", borderRadius: 2, transition: "width 0.6s ease" }} />
+                </div>
+                <span style={{ fontSize: "0.62rem", color: "var(--gold)", fontWeight: 600 }}>{pct}%</span>
+              </div>
+            )}
+          </div>
+
+          {/* Vigilia pill */}
+          <div
+            className="info-pill"
+            onClick={handleVigilToggle}
+            style={{ flexDirection: "column", alignItems: "flex-start", gap: 2 }}
+          >
+            <div className="info-pill-label">Vigilie lunară</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+              <div style={{
+                width: 10, height: 10, borderRadius: "50%",
+                background: vigilDone ? "var(--green)" : "transparent",
+                border: `2px solid ${vigilDone ? "var(--green)" : "var(--text3)"}`,
+                transition: "all 0.2s ease",
+              }} />
+              <span style={{ fontSize: "0.78rem", fontWeight: 500, color: vigilDone ? "var(--green)" : "var(--text3)" }}>
+                {vigilDone ? "Făcută" : "Marchează"}
+              </span>
+            </div>
+            <div style={{ fontSize: "0.62rem", color: "var(--text3)", marginTop: 2 }}>
+              {format(new Date(), "MMMM yyyy", { locale: ro })}
+            </div>
           </div>
         </div>
+
       </div>
 
       {selectedDate && (
