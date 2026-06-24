@@ -84,17 +84,32 @@ export default function RingCalendar({ today, readDates = new Set(), stepDates =
 
     const arcPerDay = (2 * Math.PI) / daysInMonth;
 
+    // Shared vertical gradient (light source = top of ring)
+    function makeGrad(top, bottom) {
+      const g = ctx.createLinearGradient(CX, CY - R_OUT, CX, CY + R_OUT);
+      g.addColorStop(0, top);
+      g.addColorStop(1, bottom);
+      return g;
+    }
+
+    // Pre-build gradients for each state
+    const gradRead    = makeGrad("#3fa865", "#1d5535");
+    const gradPast    = makeGrad("#352020", "#181010");
+    const gradToday   = makeGrad("rgba(230,180,70,0.38)", "rgba(180,130,40,0.14)");
+    const gradFuture  = makeGrad("rgba(255,255,255,0.055)", "rgba(255,255,255,0.018)");
+
     for (let day = 1; day <= daysInMonth; day++) {
       const { isToday, isPast, isFuture, isRead, hasStep } = stateOf(day);
       const sa  = -Math.PI / 2 + (day - 1) * arcPerDay + GAP / 2;
       const ea  = sa + arcPerDay - GAP;
       const mid = sa + (arcPerDay - GAP) / 2;
 
+      // ── 1. Main segment fill (gradient) ──────────────────────────────
       let fill;
-      if (isRead)        fill = "#2d7a4f";
-      else if (isToday)  fill = "rgba(212,160,64,0.25)";
-      else if (isPast)   fill = "#2a1f1f";
-      else               fill = "rgba(255,255,255,0.04)";
+      if (isRead)        fill = gradRead;
+      else if (isToday)  fill = gradToday;
+      else if (isPast)   fill = gradPast;
+      else               fill = gradFuture;
 
       ctx.beginPath();
       ctx.arc(CX, CY, R_OUT, sa, ea);
@@ -103,51 +118,83 @@ export default function RingCalendar({ today, readDates = new Set(), stepDates =
       ctx.fillStyle = fill;
       ctx.fill();
 
+      // ── 2. Outer rim highlight (raised top edge) ──────────────────────
+      ctx.beginPath();
+      ctx.arc(CX, CY, R_OUT - 0.5, sa + 0.005, ea - 0.005);
+      ctx.strokeStyle = isRead
+        ? "rgba(90,220,130,0.3)"
+        : isToday
+        ? "rgba(255,210,90,0.5)"
+        : isPast
+        ? "rgba(90,55,55,0.35)"
+        : "rgba(255,255,255,0.055)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // ── 3. Inner rim shadow (depth groove) ───────────────────────────
+      ctx.beginPath();
+      ctx.arc(CX, CY, R_IN + 0.5, sa + 0.005, ea - 0.005);
+      ctx.strokeStyle = "rgba(0,0,0,0.55)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // ── 4. Today: gold border ─────────────────────────────────────────
       if (isToday) {
+        ctx.beginPath();
+        ctx.arc(CX, CY, R_OUT, sa, ea);
+        ctx.arc(CX, CY, R_IN,  ea, sa, true);
+        ctx.closePath();
         ctx.strokeStyle = "#d4a040";
-        ctx.lineWidth   = 2;
+        ctx.lineWidth   = 1.8;
         ctx.stroke();
       }
 
+      // ── 5. Day number ─────────────────────────────────────────────────
       const midR = (R_OUT + R_IN) / 2;
       const tx   = CX + midR * Math.cos(mid);
       const ty   = CY + midR * Math.sin(mid);
 
       let numColor;
-      if (isRead)        numColor = "rgba(255,255,255,0.75)";
-      else if (isToday)  numColor = "#d4a040";
-      else if (isFuture) numColor = "rgba(255,255,255,0.15)";
-      else               numColor = "rgba(255,255,255,0.3)";
+      if (isRead)        numColor = "rgba(255,255,255,0.85)";
+      else if (isToday)  numColor = "#f0c060";
+      else if (isFuture) numColor = "rgba(255,255,255,0.14)";
+      else               numColor = "rgba(255,255,255,0.32)";
 
-      ctx.font         = isToday ? "bold 12px sans-serif" : "12px sans-serif";
+      ctx.font         = isToday ? `bold ${Math.round(12 * size / BASE)}px sans-serif` : `${Math.round(12 * size / BASE)}px sans-serif`;
       ctx.fillStyle    = numColor;
       ctx.textAlign    = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(String(day), tx, ty);
 
+      // ── 6. Day-of-week label outside ring ────────────────────────────
       const dowIdx = new Date(year, month, day).getDay();
       const outerR = R_OUT + 10;
       const ox = CX + outerR * Math.cos(mid);
       const oy = CY + outerR * Math.sin(mid);
-      ctx.font      = "8px sans-serif";
+      ctx.font      = `${Math.round(8 * size / BASE)}px sans-serif`;
       ctx.fillStyle = "rgba(107,104,96,0.6)";
       ctx.fillText(DOW[dowIdx], ox, oy);
 
-      // Extra step dot near outer edge
+      // ── 7. Extra step dot ─────────────────────────────────────────────
       if (hasStep) {
         const dotR = R_OUT - 6;
         const dotX = CX + dotR * Math.cos(mid);
         const dotY = CY + dotR * Math.sin(mid);
         ctx.beginPath();
         ctx.arc(dotX, dotY, 2.5, 0, 2 * Math.PI);
-        ctx.fillStyle = isRead ? "rgba(212,160,64,0.7)" : "#d4a040";
+        ctx.fillStyle = isRead ? "rgba(240,192,80,0.8)" : "#d4a040";
         ctx.fill();
       }
     }
 
+    // ── Center hole fill ─────────────────────────────────────────────────
     ctx.beginPath();
     ctx.arc(CX, CY, R_IN - 2, 0, 2 * Math.PI);
-    ctx.fillStyle = "#1a1915";
+    // Deep shadow ring just inside the inner edge
+    const innerGlow = ctx.createRadialGradient(CX, CY, R_IN - 14, CX, CY, R_IN - 2);
+    innerGlow.addColorStop(0, "#1a1915");
+    innerGlow.addColorStop(1, "#0f0e0b");
+    ctx.fillStyle = innerGlow;
     ctx.fill();
   }, [readDates, stepDates, today, daysInMonth, size, year, month]);
 
